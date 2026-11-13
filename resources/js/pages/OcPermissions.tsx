@@ -20,10 +20,12 @@ const kinds: Record<Kind, string> = {
     permission_granted: 'Granted in game', permission_revoked: 'Revoked in game',
 };
 const number = new Intl.NumberFormat('en-US');
+type View = 'balances' | 'import' | 'record' | 'activity';
 
 export default function OcPermissions({ username, character, requirement, data }: {
     username: string; character: string; requirement: number; data?: EnergyData;
 }) {
+    const [view, setView] = useState<View>('balances');
     return <Workspace username={username} character={character} officer>
         <Head title="OC Permissions" />
         <div className="page-heading">
@@ -36,15 +38,22 @@ export default function OcPermissions({ username, character, requirement, data }
                 <button className="button secondary" onClick={() => router.reload({ only: ['data'] })}>Refresh accounts</button>
             </div>
         </div>
-        <p className="notice">Members qualify after depositing {requirement} energy once. Apply withdrawal permissions in Albion, then record that decision here. Balances come from officer-entered records.</p>
-        <EnergyLogImport />
+        <div className="oc-navigation" role="group" aria-label="OC permissions view">
+            {([['balances', 'Member balances'], ['import', 'Import game log'], ['record', 'Record action'], ['activity', 'Activity history']] as const).map(([value, label]) =>
+                <button key={value} type="button" className={view === value ? 'active' : ''} aria-pressed={view === value} onClick={() => setView(value)}>{label}</button>)}
+        </div>
+        <details className="oc-policy"><summary>How OC permissions work</summary><p className="subtle">Members qualify after depositing {requirement} energy once. Low or negative balances prompt a top-up; recorded exemptions bypass these requirements. Apply withdrawal permissions in Albion, then record the decision here. Balances come from officer-entered records and imported logs.</p></details>
+        <div hidden={view !== 'import'}>
+            <div className="oc-view-intro"><h2>Import a game log</h2><p className="subtle">Paste or upload the log, check the cutoff and preview, then confirm the import.</p></div>
+            <EnergyLogImport />
+        </div>
         <Deferred data="data" fallback={<p className="panel" role="status">Loading energy accounts…</p>}>
-            {data && <EnergyAccounts key="accounts" data={data} requirement={requirement} />}
+            {data && <EnergyAccounts key="accounts" data={data} requirement={requirement} view={view} onView={setView} />}
         </Deferred>
     </Workspace>;
 }
 
-function EnergyAccounts({ data, requirement }: { data: EnergyData; requirement: number }) {
+function EnergyAccounts({ data, requirement, view, onView }: { data: EnergyData; requirement: number; view: View; onView: (view: View) => void }) {
     const [selected, setSelected] = useState('');
     const [kind, setKind] = useState<Kind>('opening');
     const [amount, setAmount] = useState('');
@@ -112,15 +121,20 @@ function EnergyAccounts({ data, requirement }: { data: EnergyData; requirement: 
 
     return <>
         {!data.rosterAvailable && <p className="auth-message" role="status">The current roster is unavailable. Existing accounts are shown; creating opening records needs a roster refresh.</p>}
-        <div className="stats-grid">
+        <div hidden={view !== 'balances'}>
+        <div className="oc-view-intro"><h2>Member balances</h2><p className="subtle">Start with members who need attention. Select a category to filter the list, or use Manage to record an action.</p></div>
+        <div className="oc-summary-grid">
             {([
-                ['Ready for permission review', ready], ['Negative balances', negative],
-                ['Low or empty balances', low], ['Untracked members', untracked],
-            ] as const).map(([label, count]) => <section className="stat-card" key={label}><div>{label}</div><strong>{count}</strong></section>)}
+                ['ready', 'Ready for permission review', ready], ['negative', 'Negative balances', negative],
+                ['low', 'Low or empty balances', low], ['untracked', 'Untracked members', untracked],
+            ] as const).map(([value, label, count]) => <button type="button" className={'stat-card oc-summary' + (filter === value ? ' active' : '')} aria-pressed={filter === value} key={value} onClick={() => { setFilter(filter === value ? 'all' : value); setPage(0); }}><span>{label}</span><strong>{count}</strong><small>View members →</small></button>)}
         </div>
+        </div>
+        <div hidden={view !== 'record'}>
         <section className="panel character-stats-section">
-            <h3>Record an account action</h3>
+            <div className="panel-heading"><h3>Record an account action</h3><button type="button" className="button secondary" disabled={saving} onClick={() => onView('balances')}>← Member balances</button></div>
             <p className="subtle">Start each member with a verified opening balance. Record subsequent deposits and withdrawals from the in-game log.</p>
+            {member && <div className="oc-account-context"><strong>{member.name}</strong><span>Balance: {account ? number.format(account.balance) : 'Not initialized'}</span><span>Permission: {account?.permission === true ? 'Granted' : account?.permission === false ? 'Revoked' : 'Not checked'}</span>{member.exemption?.active && <span>Exempt · {exemptionRoles[member.exemption.role]}</span>}</div>}
             <form ref={form} onSubmit={(event) => void record(event)}>
                 <fieldset disabled={saving} className="energy-form">
                     <label>Member<select value={selected} required onChange={(event) => {
@@ -152,8 +166,10 @@ function EnergyAccounts({ data, requirement }: { data: EnergyData; requirement: 
             {error && <p className="auth-message" role="alert">{error}</p>}
             {notice && <p className="subtle" role="status">{notice}</p>}
         </section>
+        </div>
+        <div hidden={view !== 'balances'}>
         <section className="character-stats-section" aria-labelledby="energy-members">
-            <h3 id="energy-members">Member balances</h3>
+            <h3 id="energy-members">Accounts ({matches.length})</h3>
             <p className="subtle">Top-up amounts target a {requirement}-energy balance. Mentors, officers and the guild master with recorded exemptions are excluded from deposit and top-up requirements.</p>
             <div className="panel battle-filters">
                 <label>Find member<input type="search" value={search} placeholder="Character name" onChange={(event) => { setSearch(event.target.value); setPage(0); }} /></label>
@@ -175,7 +191,8 @@ function EnergyAccounts({ data, requirement }: { data: EnergyData; requirement: 
                     <td>{entry.exemption?.active ? 'Exempt' : entry.account ? number.format(Math.max(0, requirement - entry.account.balance)) : '—'}</td>
                     <td><button className="button secondary" disabled={saving} onClick={() => {
                         selectMember(entry);
-                        form.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                        onView('record');
+                        requestAnimationFrame(() => form.current?.scrollIntoView({ behavior: 'smooth', block: 'center' }));
                     }}>Manage</button></td>
                 </tr>)}</tbody>
             </table></div> : <p className="panel">No members match these filters.</p>}
@@ -185,6 +202,8 @@ function EnergyAccounts({ data, requirement }: { data: EnergyData; requirement: 
                 <button className="button secondary" disabled={current + 1 === pages} onClick={() => setPage(current + 1)}>Next</button>
             </nav>}
         </section>
+        </div>
+        <div hidden={view !== 'activity'}>
         <section className="character-stats-section" aria-labelledby="energy-activity">
             <h3 id="energy-activity">Recent officer records</h3>
             <p className="subtle">Latest 50 recorded actions. Notes refer to the in-game transaction being entered.</p>
@@ -197,5 +216,6 @@ function EnergyAccounts({ data, requirement }: { data: EnergyData; requirement: 
                 </tr>)}</tbody>
             </table></div> : <p className="panel">No energy actions recorded yet.</p>}
         </section>
+        </div>
     </>;
 }

@@ -1,5 +1,7 @@
 # Guildhall on Laravel
 
+OC Permissions opens on Member balances, with clickable attention counts and searchable accounts. Import game log, Record action and Activity history are separate views; draft inputs and import previews remain mounted when switching. Manage on a member opens their action form with current balance/permission context. Policy help is collapsed, and exemption management stays available in the page header. Backend rules, preview validation and authorization are unchanged.
+
 Loot Logs separates the session editor and guild-wide character tallies into two views. The editor follows Choose a session → Import & review → Save your work. Manual entry and price settings are collapsed until needed; search stays beside player records. A desktop sticky save bar keeps save/confirmation actions accessible, with a regular footer on mobile. Switching views preserves unsaved session edits and existing navigation warnings.
 
 The Loot Logs import picker uses a prominent gold Choose File button, keyboard focus styling and a CSV/JSON format hint. Find records sits directly above the player records, separate from the import controls.
@@ -83,6 +85,8 @@ Install the existing Discord application as a bot with the bot and applications.
 Set the Discord application’s Interactions Endpoint URL to the Laravel site’s public HTTPS URL ending in `/api/discord/interactions`. For local testing, use a public HTTPS tunnel. A Discord application has one interactions URL, so switching it moves command handling to Laravel. 
 
 ## Deploy
+
+For a Railway trial, follow [the Railway deployment guide](docs/railway.md). The repository includes web and queue-worker Railpack configurations. Use three services (web, MySQL with persistent volume, decision worker), server-side secrets, database-backed sessions/cache, and the generated HTTPS origin. The frontend is built during deployment. The trial's $5 credit is usage-limited; limited accounts can restrict external API requests. No paid upgrade is assumed.
 
 One VM can run the web server, PHP-FPM, MySQL and the queue worker. Configure the web root to `public/`, route application requests to `public/index.php`, and use HTTPS. Keep MySQL private and run the queue worker under a process manager. Set `APP_ENV=production`, `APP_DEBUG=false`, `APP_URL` to the public HTTPS origin, and `SESSION_SECURE_COOKIE=true`. Register the corresponding production OAuth callback. Use persistent storage for MySQL, back it up separately, and preserve the Laravel application key securely. Apply migrations and restart the queue worker after deployment.
 
